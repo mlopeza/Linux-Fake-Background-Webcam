@@ -11,6 +11,12 @@ class Camera:
         self._set_frame_rate(frame_rate)
         self.get_camera_values("new")
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.cam.release()
+
     def get_camera_values(self, status):
         print(
             "Real camera {} values are set as: {}x{} with {} FPS and video codec {}".format(

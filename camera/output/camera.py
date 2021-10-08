@@ -44,6 +44,8 @@ class CV2FrameOutput(VideoOutput):
     def _write(self, frame):
         cv2.imshow(self._window_name, frame)
         # This makes the imshow refresh and show the frame
+        # Possible solution for closing window
+        # https://stackoverflow.com/questions/35003476/opencv-python-how-to-detect-if-a-window-is-closed
         cv2.waitKey(1)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
