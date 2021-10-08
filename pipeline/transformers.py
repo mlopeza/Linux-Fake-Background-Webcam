@@ -3,25 +3,7 @@ import mediapipe as mp
 import numpy as np
 
 
-class Pipeline:
-    def __init__(self):
-        self._head = None
-        self._tail = None
-
-    def attach(self, transformer):
-        if self._head is None:
-            self._head = transformer
-            self._tail = transformer
-        else:
-            self._tail.attach(transformer)
-            self._tail = transformer
-        return self
-
-    def build(self):
-        return self._head
-
-
-class Transformer:
+class MaskTransformer:
 
     def __init__(self, overwrite_source=True):
         self._next = None
@@ -41,7 +23,25 @@ class Transformer:
         return transformation
 
 
-class SelfieSegmentation(Transformer):
+class MaskPipeline(MaskTransformer):
+    def __init__(self):
+        self._head = None
+        self._tail = None
+
+    def attach(self, transformer):
+        if self._head is None:
+            self._head = transformer
+            self._tail = transformer
+        else:
+            self._tail.attach(transformer)
+            self._tail = transformer
+        return self
+
+    def process(self, frame):
+        return self._head.process(frame)
+
+
+class SelfieSegmentation(MaskTransformer):
     def __init__(self):
         super().__init__()
         self._algo = mp.solutions.selfie_segmentation.SelfieSegmentation(model_selection=1)
@@ -53,7 +53,7 @@ class SelfieSegmentation(Transformer):
         return result
 
 
-class Threshold(Transformer):
+class Threshold(MaskTransformer):
 
     def __init__(self, threshold=1):
         super().__init__()
@@ -66,7 +66,7 @@ class Threshold(Transformer):
         return source
 
 
-class Dilate(Transformer):
+class Dilate(MaskTransformer):
     def __init__(self, iterations=1):
         super().__init__()
         self._iterations = iterations
@@ -77,7 +77,7 @@ class Dilate(Transformer):
         return source
 
 
-class Blur(Transformer):
+class Blur(MaskTransformer):
     def __init__(self):
         super().__init__()
         self._kernel = (10, 10)
@@ -87,7 +87,7 @@ class Blur(Transformer):
         return source
 
 
-class BilateralFilter(Transformer):
+class BilateralFilter(MaskTransformer):
     def __init__(self):
         super().__init__()
 
@@ -95,7 +95,7 @@ class BilateralFilter(Transformer):
         return cv2.bilateralFilter(source, 5, 200, 200)
 
 
-class AccumulatedWeighted(Transformer):
+class AccumulatedWeighted(MaskTransformer):
     def __init__(self, update_speed):
         super().__init__()
         self._update_speed = update_speed
@@ -107,7 +107,7 @@ class AccumulatedWeighted(Transformer):
         return cv2.accumulateWeighted(source, self._last_source, self._update_speed)
 
 
-class Sigmoid(Transformer):
+class Sigmoid(MaskTransformer):
     def __init__(self, a=5., b=-10.):
         super().__init__()
         self._a = a

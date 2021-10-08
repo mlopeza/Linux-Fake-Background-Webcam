@@ -143,14 +143,13 @@ def main():
 def build_mask_pipeline(threshold, dilate_iterations, mask_update_speed):
     # Create the mask pipeline, in this case the pipeline would be build at the beginning and then we would apply
     # Everything at runtime
-    return Pipeline() \
+    return MaskPipeline() \
         .attach(SelfieSegmentation()) \
         .attach(BilateralFilter()) \
         .attach(Threshold(threshold=0.05)) \
         .attach(Dilate(iterations=1)) \
         .attach(Sigmoid()) \
-        .attach(AccumulatedWeighted(0.5)) \
-        .build()
+        .attach(AccumulatedWeighted(0.5))
 
 
 if __name__ == "__main__":
