@@ -88,7 +88,7 @@ def main():
     target_fps = 30
     width = 640
     height = 360
-    background = read_background(video_background, width, height)
+    background = read_background(image_background, width, height)
     print(f'Target fps {target_fps}')
     camera = Camera('/dev/video0', width, height, target_fps, 'YUYV')
     fake_cam = FakeWebcam('/dev/video2', width, height)
@@ -107,7 +107,7 @@ def main():
     algo = mp.solutions.selfie_segmentation.SelfieSegmentation(model_selection=1)
     while True:
         frame = source_pipe.get(block=True)
-        mask = extract_background(algo, frame, old_mask, 0.75, 0.5)
+        mask = extract_background(algo, frame, old_mask, 0.5, 0.5)
         old_mask = mask
         cv2.blendLinear(frame, background.next(frame_counter.fps()), mask, 1 - mask, dst=frame)
         transformation = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
