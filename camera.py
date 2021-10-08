@@ -1,6 +1,7 @@
+import signal
 import time
 from queue import Queue, Empty, Full
-from threading import Thread
+from threading import Thread, Event
 
 from camera.input.background import read_background
 from camera.input.camera import Camera
@@ -10,19 +11,67 @@ from pipeline.transformers import *
 
 
 # Todo: create class that will manage the interruption of the data that will be executed or something on the same line
+# Todo: create an actual pipeline that starts everything in lockstep
 
-def cam_reader(camera, frames):
-    while True:
+class CameraPipeline:
+
+    def __init__(self, video_in, video_out, background_replacer, mask_pipeline, target_fps,
+                 queue_size=5):
+        self._thread_kill = Event()
+        self._input = Queue(queue_size)
+        self._output = Queue(queue_size)
+        self._framer_counter = frame_counter
+        self._video_in = video_in
+        self._video_out = video_out
+        self._input_thread = Thread(target=CameraPipeline.reader, args=(video_in, self._input, self._thread_kill))
+        self._output_thread = Thread(target=CameraPipeline.writer, args=(video_out, self._output, self._thread_kill))
+        self._background_replacer = background_replacer
+        self._mask_pipeline = mask_pipeline
+        self._input_timeout = 1 / target_fps
+        self._latest_frame = None
+
+    def start(self):
+        self._input_thread.start()
+        self._output_thread.start()
+
+    def step(self):
+        if self._thread_kill.is_set():
+            return self._thread_kill.is_set()
         try:
-            frames.put_nowait(camera.next())
+            self._latest_frame = self._input.get(timeout=self._input_timeout)
+        except Empty:
+            # If we can't get a frame we try to use the latest one, otherwise we just skip this execution step
+            # it will be a slow startup but after the first frame everything will be smoother
+            if self._latest_frame is None:
+                return self._thread_kill.is_set()
+
+        mask = self._mask_pipeline.process(self._latest_frame)
+        result = self._background_replacer.process(self._latest_frame, mask)
+        try:
+            self._output.put(result)
         except Full:
-            print(f"Dropping camera frames as queue is full")
+            print('Dropped write frame')
             pass
+        return self._thread_kill.is_set()
 
+    def stop(self):
+        self._thread_kill.set()
+        self._input_thread.join()
+        self._output_thread.join()
 
-def cam_writer(output, frames):
-    while True:
-        output.write(frames.get())
+    @staticmethod
+    def reader(v_in, queue, pill):
+        while not pill.is_set():
+            try:
+                queue.put_nowait(v_in.next())
+            except Full:
+                print(f"Dropping camera frames as queue is full")
+                pass
+
+    @staticmethod
+    def writer(v_out, queue, pill):
+        while not pill.is_set():
+            v_out.write(queue.get())
 
 
 def frame_printer(frame_counter, writer, reader):
@@ -31,48 +80,35 @@ def frame_printer(frame_counter, writer, reader):
         print("FPS: {:6.2f} writer({}) reader({})".format(frame_counter.fps(), writer.qsize(), reader.qsize()))
 
 
-def main(width, height, frame_counter, video_in, video_out):
+def main(width, height, frame_counter, video_in, video_out, target_fps):
     video_background = '/home/mlopez/Downloads/Seemed - 3639.mp4'
     image_background = '/home/mlopez/Desktop/background.jpg'
-    target_fps = 30
-    background = read_background(video_background, width, height)
-    # Queue should honestly drop oldest elements if full
-    source_pipe = Queue(maxsize=5)
-    destination_pipe = Queue(maxsize=5)
-    frame_counter.start()
-    reader = Thread(target=cam_reader, args=(video_in, source_pipe))
-    writer = Thread(target=cam_writer, args=(video_out, destination_pipe))
-    printer = Thread(target=frame_printer, args=(frame_counter, destination_pipe, source_pipe))
-    reader.start()
-    writer.start()
-    printer.start()
-
-    frame = source_pipe.get(block=True)
-    frame_timeout = 1 / target_fps
-    print(f'{target_fps} {frame_timeout}')
     mask_pipeline = build_mask_pipeline(0.75, 1, 0.5)
 
+    background = read_background(video_background, width, height)
+
     # The background provider is a lambda of the current process
-    provider = lambda: background.next(frame_counter.fps())
-    linear_background_apply = LinearBlendBackgroundReplace(provider)
-    background_apply = BackgroundReplace(provider)
-    while True:
-        try:
-            frame = source_pipe.get(timeout=frame_timeout)
-        except Empty:
-            # Use the already existing frame to write it
-            pass
-        """
-        image = extract_background_v2(algo, frame, old_mask, 0.5, 1)
-        destination_pipe.put(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-        """
-        mask = mask_pipeline.process(frame)
-        result = background_apply.process(frame, mask)
-        try:
-            destination_pipe.put(result)
-        except Full:
-            print('Dropped write frame')
-            pass
+    background_provider = lambda: background.next(frame_counter.fps())
+    background_apply = BackgroundReplace(background_provider)
+
+    pipeline = CameraPipeline(video_in, video_out, background_apply, mask_pipeline, target_fps)
+
+    # Find a better way to handle the pipeline stop
+    def handle(signum, frame):
+        print('Handling termination, stopping pipeline')
+        pipeline.stop()
+
+    signal.signal(signal.SIGINT, handle)
+    signal.signal(signal.SIGTERM, handle)
+
+    frame_counter.start()
+    pipeline.start()
+
+    stop = False
+    while not stop:
+        stop = pipeline.step()
+    print('Stopping pipeline')
+    pipeline.stop()
 
 
 def build_mask_pipeline(threshold, dilate_iterations, mask_update_speed):
@@ -97,4 +133,4 @@ if __name__ == "__main__":
         with V4L2LoopbackOutput('/dev/video2', width, height) as v4l:
             with CV2FrameOutput() as cv2out:
                 video_out = MultiOutput(frame_counter, cv2out, v4l)
-                main(width, height, frame_counter, video_in, video_out)
+                main(width, height, frame_counter, video_in, video_out, target_fps)
