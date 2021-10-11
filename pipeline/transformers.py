@@ -42,9 +42,9 @@ class MaskPipeline(MaskTransformer):
 
 
 class SelfieSegmentation(MaskTransformer):
-    def __init__(self):
+    def __init__(self, model=1):
         super().__init__()
-        self._algo = mp.solutions.selfie_segmentation.SelfieSegmentation(model_selection=1)
+        self._algo = mp.solutions.selfie_segmentation.SelfieSegmentation(model_selection=model)
 
     def apply(self, source):
         source.flags.writeable = False
@@ -67,8 +67,8 @@ class Threshold(MaskTransformer):
 
 
 class Dilate(MaskTransformer):
-    def __init__(self, iterations=1):
-        super().__init__()
+    def __init__(self, iterations=1, overwrite_source=True):
+        super().__init__(overwrite_source=overwrite_source)
         self._iterations = iterations
         self._kernel = np.ones((5, 5), np.uint8)
 
@@ -84,6 +84,16 @@ class Blur(MaskTransformer):
 
     def apply(self, source):
         cv2.blur(source, self._kernel, source)
+        return source
+
+
+class GaussianBlur(MaskTransformer):
+    def __init__(self):
+        super().__init__()
+        self._kernel = (101, 101)
+
+    def apply(self, source):
+        cv2.GaussianBlur(source, self._kernel, cv2.BORDER_TRANSPARENT)
         return source
 
 
@@ -140,3 +150,48 @@ class BackgroundReplace:
     def process(self, frame, mask):
         condition = np.stack((mask,) * 3, axis=-1) > self._threshold
         return np.where(condition, frame, self._provider())
+
+
+class BackgroundBlurReplace:
+    def __init__(self, background_provider, threshold=0.1):
+        super().__init__()
+        self._provider = background_provider
+        self._threshold = threshold
+        self._gaussian_blur = GaussianBlur()
+        self._dilate = Dilate(2, overwrite_source=False)
+
+    def process2(self, lena, mask):
+        # mask = cv2.GaussianBlur(mask, (301, 301), 0)
+        blur_mask = self._dilate.process(mask)
+        blur_mask = cv2.blur(blur_mask, (500, 500))
+        blur_mask = cv2.cvtColor(blur_mask, cv2.COLOR_GRAY2BGR)
+        mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+        foreground = cv2.multiply(lena, blur_mask, dtype=cv2.CV_8U)
+        background = cv2.multiply(self._provider(), (1 - mask), dtype=cv2.CV_8U)
+        output = cv2.add(foreground, background)
+        return output
+
+    def process(self, image, pmask):
+        pmask = cv2.erode(pmask, np.ones((5, 5), np.uint8), iterations=2)
+        blur_mask = self._dilate.process(pmask)
+        blur_mask = cv2.cvtColor(blur_mask, cv2.COLOR_GRAY2BGR)
+
+        mask = cv2.cvtColor(pmask, cv2.COLOR_GRAY2BGR)
+
+        foreground = cv2.multiply(image, blur_mask, dtype=cv2.CV_8U)
+        background = cv2.multiply(self._provider(), (1 - mask), dtype=cv2.CV_8U)
+        output = cv2.add(foreground, background)
+        return output
+
+    def _scale_uint(self, data):
+        return cv2.normalize(src=data, dst=None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+
+    def alphaBlend(self, img1, img2, mask):
+        """ alphaBlend img1 and img 2 (of CV_8UC3) with mask (CV_8UC1 or CV_8UC3)
+        """
+        if mask.ndim == 3 and mask.shape[-1] == 3:
+            alpha = mask / 255.0
+        else:
+            alpha = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR) / 255.0
+        blended = cv2.convertScaleAbs(img1 * (1 - alpha) + img2 * alpha)
+        return blended

@@ -94,13 +94,14 @@ def frame_printer(frame_counter, writer, reader):
 def main(width, height, frame_counter, video_in, video_out, target_fps):
     video_background = '/home/mlopez/Downloads/Seemed - 3639.mp4'
     image_background = '/home/mlopez/Pictures/Backgrounds/fursona.jpg'
+    red_background = '/home/mlopez/Desktop/red-background.jpg'
     mask_pipeline = build_mask_pipeline(0.75, 1, 0.5)
 
-    background = read_background(image_background, width, height)
+    background = read_background(video_background, width, height)
 
     # The background provider is a lambda of the current process
     background_provider = lambda: background.next(frame_counter.fps())
-    background_apply = BackgroundReplace(background_provider)
+    background_apply = BackgroundBlurReplace(background_provider)
 
     pipeline = CameraPipeline(video_in, video_out, background_apply, mask_pipeline, target_fps)
 
@@ -126,11 +127,11 @@ def build_mask_pipeline(threshold, dilate_iterations, mask_update_speed):
     # Create the mask pipeline, in this case the pipeline would be build at the beginning and then we would apply
     # Everything at runtime
     return MaskPipeline() \
-        .attach(SelfieSegmentation()) \
+        .attach(SelfieSegmentation(model=0)) \
         .attach(BilateralFilter()) \
         .attach(Threshold(threshold=0.05)) \
-        .attach(Dilate(iterations=1)) \
         .attach(Sigmoid()) \
+        .attach(GaussianBlur()) \
         .attach(AccumulatedWeighted(0.5))
 
 
