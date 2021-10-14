@@ -3,6 +3,8 @@ import time
 from queue import Queue, Empty, Full
 from threading import Thread, Event
 
+import configargparse
+
 from camera.input.background import read_background
 from camera.input.camera import Camera
 from camera.output.camera import V4L2LoopbackOutput, CV2FrameOutput, MultiOutput
@@ -91,20 +93,10 @@ def frame_printer(frame_counter, writer, reader):
         print("FPS: {:6.2f} writer({}) reader({})".format(frame_counter.fps(), writer.qsize(), reader.qsize()))
 
 
-def main(width, height, frame_counter, video_in, video_out, target_fps):
-    video_background = '/home/mlopez/Downloads/Seemed - 3639.mp4'
-    image_background = '/home/mlopez/Pictures/Backgrounds/fursona.jpg'
-    red_background = '/home/mlopez/Desktop/red-background.jpg'
-    nice_background = '/home/mlopez/Desktop/background.jpg'
+def main(v_in, v_out, background, fps):
     mask_pipeline = build_mask_pipeline(selfie_model=0, threshold=0.05, erode_iterations=2, mask_update_speed=0.5)
-
-    background = read_background(nice_background, width, height)
-
-    # The background provider is a lambda of the current process
-    background_provider = lambda: background.next(frame_counter.fps())
-    background_apply = BackgroundBlurReplace(background_provider)
-
-    pipeline = CameraPipeline(video_in, video_out, background_apply, mask_pipeline, target_fps)
+    background_apply = BackgroundBlurReplace(background)
+    pipeline = CameraPipeline(v_in, v_out, background_apply, mask_pipeline, 60)
 
     # Find a better way to handle the pipeline stop
     def handle(signum, frame):
@@ -114,7 +106,7 @@ def main(width, height, frame_counter, video_in, video_out, target_fps):
     signal.signal(signal.SIGINT, handle)
     signal.signal(signal.SIGTERM, handle)
 
-    frame_counter.start()
+    fps.start()
     pipeline.start()
 
     stop = False
@@ -137,14 +129,97 @@ def build_mask_pipeline(selfie_model, threshold, erode_iterations, mask_update_s
         .attach(AccumulatedWeighted(mask_update_speed))
 
 
+def _parse_arguments():
+    parser = configargparse.ArgParser(description="Faking your webcam background under GNU/Linux.",
+                                      formatter_class=configargparse.ArgumentDefaultsHelpFormatter)
+
+    parser.add_argument("-c", "--config", is_config_file=True,
+                        help="Config file")
+
+    # Webcam Options
+    parser.add_argument("-w", "--webcam-path", default="/dev/video0",
+                        help="Set real webcam path")
+    parser.add_argument("-W", "--width", default=1280, type=int,
+                        help="Set real webcam width")
+    parser.add_argument("-H", "--height", default=720, type=int,
+                        help="Set real webcam height")
+    parser.add_argument("-F", "--fps", default=30, type=int,
+                        help="Set real webcam FPS")
+    parser.add_argument("-C", "--codec", default='YUYV', type=str,
+                        help="Set real webcam codec")
+
+    # V42Loopback options
+    parser.add_argument("-v", "--v4l2loopback-path", default="/dev/video2",
+                        help="V4l2loopback device path")
+
+    # Output options
+    parser.add_argument("--preview-output", action="store_false",
+                        help="Show in a window the preview of the camera processing")
+    # Background options
+    parser.add_argument("-b", "--background", default=None,
+                        help="Background image or video that should be used")
+
+    parser.add_argument("--background-aspect", choices=['tile', 'keep-aspect'],
+                        default='keep-aspect',
+                        help="Select the aspect of the background")
+
+    # Background mask processing skip, by default we apply all of them
+    parser.add_argument("--skip-bilateral-filter", action="store_false",
+                        help="Force the mask to follow a sigmoid distribution")
+    parser.add_argument("--skip-bilateral-threshold", action="store_false",
+                        help="Force the mask to follow a sigmoid distribution")
+    parser.add_argument("--skip-sigmoid", action="store_false",
+                        help="Force the mask to follow a sigmoid distribution")
+    parser.add_argument("--skip-gaussian-blur", action="store_false",
+                        help="Force the mask to follow a sigmoid distribution")
+    parser.add_argument("--skip-bilateral-erosion", action="store_false",
+                        help="Force the mask to follow a sigmoid distribution")
+    parser.add_argument("--skip-background-average-mask", action="store_false",
+                        help="Force the mask to follow a sigmoid distribution")
+
+    # Options for background processors
+    parser.add_argument("--select-model", default="landscape", choices=['general-purpose', 'landscape'],
+                        help="Mediapipe model for background extractions")
+
+    parser.add_argument("--background-mask-update-speed", default="50", type=int, choices=range(1, 100),
+                        help="The running average percentage for background mask updates")
+
+    parser.add_argument("--threshold", default="75", type=int, choices=range(1, 100),
+                        help="The minimum percentage threshold for accepting a pixel as foreground")
+    return parser.parse_args()
+
+
+def _get_camera(path, width, height, codec, fps):
+    return Camera(path, width, height, fps, codec)
+
+
+def _get_output(fps, camera, preview):
+    output = [V4L2LoopbackOutput('/dev/video2', camera.get_frame_width(), camera.get_frame_height())]
+    if preview:
+        output.append(CV2FrameOutput())
+    return MultiOutput(fps, *output)
+
+
+def _get_background(path, fps, width, height):
+    # Todo: figure out a way to synchronize a possible video frame rate with the frame rate of the camera
+    # possibly the fastest one will be the one that dictates the fps
+    background = read_background(path, width, height)
+    background_provider = lambda: background.next(fps.fps())
+    return background_provider
+
+
 if __name__ == "__main__":
-    width = 640
-    height = 360
-    target_fps = 30
-    webcam_codec = 'YUYV'
+    args = _parse_arguments()
     frame_counter = FrameMeter()
-    with Camera('/dev/video0', width, height, target_fps, webcam_codec) as video_in:
-        with V4L2LoopbackOutput('/dev/video2', width, height) as v4l:
-            with CV2FrameOutput() as cv2out:
-                video_out = MultiOutput(frame_counter, cv2out, v4l)
-                main(width, height, frame_counter, video_in, video_out, target_fps)
+
+    # Todo: parametrize background
+    video_background = '/home/mlopez/Downloads/Seemed - 3639.mp4'
+    image_background = '/home/mlopez/Pictures/Backgrounds/fursona.jpg'
+    red_background = '/home/mlopez/Desktop/red-background.jpg'
+    nice_background = '/home/mlopez/Desktop/background.jpg'
+
+    with _get_camera(args.webcam_path, args.width, args.height, args.codec, args.fps) as video_in:
+        with _get_output(frame_counter, video_in, args.preview_output) as vide_out:
+            background_provider = _get_background(video_background, frame_counter, video_in.get_frame_width(),
+                                                  video_in.get_frame_height())
+            main(video_in, vide_out, background_provider, frame_counter)
