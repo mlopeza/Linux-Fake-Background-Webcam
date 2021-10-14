@@ -96,7 +96,7 @@ def main(width, height, frame_counter, video_in, video_out, target_fps):
     image_background = '/home/mlopez/Pictures/Backgrounds/fursona.jpg'
     red_background = '/home/mlopez/Desktop/red-background.jpg'
     nice_background = '/home/mlopez/Desktop/background.jpg'
-    mask_pipeline = build_mask_pipeline(0.75, 1, 0.5)
+    mask_pipeline = build_mask_pipeline(selfie_model=0, threshold=0.05, erode_iterations=2, mask_update_speed=0.5)
 
     background = read_background(nice_background, width, height)
 
@@ -124,16 +124,17 @@ def main(width, height, frame_counter, video_in, video_out, target_fps):
     pipeline.stop()
 
 
-def build_mask_pipeline(threshold, dilate_iterations, mask_update_speed):
+def build_mask_pipeline(selfie_model, threshold, erode_iterations, mask_update_speed):
     # Create the mask pipeline, in this case the pipeline would be build at the beginning and then we would apply
     # Everything at runtime
     return MaskPipeline() \
-        .attach(SelfieSegmentation(model=0)) \
+        .attach(SelfieSegmentation(model=selfie_model)) \
         .attach(BilateralFilter()) \
-        .attach(Threshold(threshold=0.05)) \
+        .attach(Threshold(threshold=threshold)) \
         .attach(Sigmoid()) \
         .attach(GaussianBlur()) \
-        .attach(AccumulatedWeighted(0.5))
+        .attach(Erode(erode_iterations)) \
+        .attach(AccumulatedWeighted(mask_update_speed))
 
 
 if __name__ == "__main__":

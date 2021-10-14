@@ -129,6 +129,16 @@ class Sigmoid(MaskTransformer):
         return sig
 
 
+class Erode(MaskTransformer):
+    def __init__(self, iterations=2):
+        super().__init__()
+        self._iterations = iterations
+        self._kernel = np.ones((5, 5), np.uint8)
+
+    def apply(self, source):
+        return cv2.erode(source, self._kernel, iterations=self._iterations)
+
+
 class LinearBlendBackgroundReplace:
     def __init__(self, background_provider, overwrite_source=True):
         super().__init__()
@@ -159,7 +169,6 @@ class BackgroundBlurReplace:
         self._dilate = Dilate(dilate_iterations, overwrite_source=False)
 
     def process(self, image, pmask):
-        pmask = cv2.erode(pmask, np.ones((5, 5), np.uint8), iterations=2)
         blur_mask = self._dilate.process(pmask)
         blur_mask = cv2.cvtColor(blur_mask, cv2.COLOR_GRAY2BGR)
 
