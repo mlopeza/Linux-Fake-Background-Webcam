@@ -153,7 +153,7 @@ def _parse_arguments():
                         help="V4l2loopback device path")
 
     # Output options
-    parser.add_argument("--preview-output", action="store_false",
+    parser.add_argument("--preview-output", action="store_true",
                         help="Show in a window the preview of the camera processing")
     # Background options
     parser.add_argument("-b", "--background", default=None,
@@ -164,17 +164,17 @@ def _parse_arguments():
                         help="Select the aspect of the background")
 
     # Background mask processing skip, by default we apply all of them
-    parser.add_argument("--skip-bilateral-filter", action="store_false",
+    parser.add_argument("--skip-bilateral-filter", action="store_true",
                         help="Force the mask to follow a sigmoid distribution")
-    parser.add_argument("--skip-bilateral-threshold", action="store_false",
+    parser.add_argument("--skip-bilateral-threshold", action="store_true",
                         help="Force the mask to follow a sigmoid distribution")
-    parser.add_argument("--skip-sigmoid", action="store_false",
+    parser.add_argument("--skip-sigmoid", action="store_true",
                         help="Force the mask to follow a sigmoid distribution")
-    parser.add_argument("--skip-gaussian-blur", action="store_false",
+    parser.add_argument("--skip-gaussian-blur", action="store_true",
                         help="Force the mask to follow a sigmoid distribution")
-    parser.add_argument("--skip-bilateral-erosion", action="store_false",
+    parser.add_argument("--skip-bilateral-erosion", action="store_true",
                         help="Force the mask to follow a sigmoid distribution")
-    parser.add_argument("--skip-background-average-mask", action="store_false",
+    parser.add_argument("--skip-background-average-mask", action="store_true",
                         help="Force the mask to follow a sigmoid distribution")
 
     # Options for background processors
