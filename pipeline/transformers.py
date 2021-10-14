@@ -153,23 +153,10 @@ class BackgroundReplace:
 
 
 class BackgroundBlurReplace:
-    def __init__(self, background_provider, threshold=0.1):
+    def __init__(self, background_provider, dilate_iterations=2):
         super().__init__()
         self._provider = background_provider
-        self._threshold = threshold
-        self._gaussian_blur = GaussianBlur()
-        self._dilate = Dilate(2, overwrite_source=False)
-
-    def process2(self, lena, mask):
-        # mask = cv2.GaussianBlur(mask, (301, 301), 0)
-        blur_mask = self._dilate.process(mask)
-        blur_mask = cv2.blur(blur_mask, (500, 500))
-        blur_mask = cv2.cvtColor(blur_mask, cv2.COLOR_GRAY2BGR)
-        mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-        foreground = cv2.multiply(lena, blur_mask, dtype=cv2.CV_8U)
-        background = cv2.multiply(self._provider(), (1 - mask), dtype=cv2.CV_8U)
-        output = cv2.add(foreground, background)
-        return output
+        self._dilate = Dilate(dilate_iterations, overwrite_source=False)
 
     def process(self, image, pmask):
         pmask = cv2.erode(pmask, np.ones((5, 5), np.uint8), iterations=2)
@@ -182,16 +169,3 @@ class BackgroundBlurReplace:
         background = cv2.multiply(self._provider(), (1 - mask), dtype=cv2.CV_8U)
         output = cv2.add(foreground, background)
         return output
-
-    def _scale_uint(self, data):
-        return cv2.normalize(src=data, dst=None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-
-    def alphaBlend(self, img1, img2, mask):
-        """ alphaBlend img1 and img 2 (of CV_8UC3) with mask (CV_8UC1 or CV_8UC3)
-        """
-        if mask.ndim == 3 and mask.shape[-1] == 3:
-            alpha = mask / 255.0
-        else:
-            alpha = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR) / 255.0
-        blended = cv2.convertScaleAbs(img1 * (1 - alpha) + img2 * alpha)
-        return blended

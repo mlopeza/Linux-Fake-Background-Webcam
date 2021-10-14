@@ -95,9 +95,10 @@ def main(width, height, frame_counter, video_in, video_out, target_fps):
     video_background = '/home/mlopez/Downloads/Seemed - 3639.mp4'
     image_background = '/home/mlopez/Pictures/Backgrounds/fursona.jpg'
     red_background = '/home/mlopez/Desktop/red-background.jpg'
+    nice_background = '/home/mlopez/Desktop/background.jpg'
     mask_pipeline = build_mask_pipeline(0.75, 1, 0.5)
 
-    background = read_background(video_background, width, height)
+    background = read_background(nice_background, width, height)
 
     # The background provider is a lambda of the current process
     background_provider = lambda: background.next(frame_counter.fps())
